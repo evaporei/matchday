@@ -24,8 +24,15 @@ struct SeasonCompetitor {
 const COMPETITOR_STATS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors/$COMPETITOR/statistics.json?api_key=$API_KEY";
 
 #[derive(Debug, Serialize, Deserialize)]
+struct PlayerStats {
+    assists: usize,
+    goals_scored: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct Player {
     id: String,
+    statistics: PlayerStats,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
