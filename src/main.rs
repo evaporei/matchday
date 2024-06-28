@@ -5,6 +5,18 @@ use std::env;
 
 const SEASON_23_24_ID: &str = "sr:season:105353";
 
+const SEASON_COMPETITORS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors.json?api_key=$API_KEY";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SeasonCompetitors {
+    season_competitors: Vec<SeasonCompetitor>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SeasonCompetitor {
+    id: String,
+}
+
 const COMPETITOR_STATS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors/$COMPETITOR/statistics.json?api_key=$API_KEY";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -13,13 +25,13 @@ struct Player {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Competitor {
+struct CompetitorPlayers {
     players: Vec<Player>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CompetitorStats {
-    competitor: Competitor,
+    competitor: CompetitorPlayers,
 }
 
 fn build_client() -> reqwest::Client {
@@ -51,14 +63,37 @@ async fn get_competitor_stats(
         .await?)
 }
 
+async fn get_competitors(
+    client: &reqwest::Client,
+) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+    let api_key = env::var("SPORTRADAR_API_KEY").expect("SPORTRADAR_API_KEY env var is not set");
+
+    let url = SEASON_COMPETITORS_URL
+        .replace("$SEASON", SEASON_23_24_ID)
+        .replace("$API_KEY", &api_key);
+
+    Ok(client
+        .get(url)
+        .send()
+        .await?
+        .json::<SeasonCompetitors>()
+        .await?)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     let client = build_client();
 
-    let competitor_stats = get_competitor_stats(&client, "sr:competitor:17").await?;
+    let competitors = get_competitors(&client).await?;
+    // println!("{competitors:#?}");
 
-    println!("{competitor_stats:#?}");
+    for competitor in competitors.season_competitors {
+        println!("fetching for id: {}", competitor.id);
+        let competitor_stats = get_competitor_stats(&client, &competitor.id).await?;
+
+        println!("{competitor_stats:#?}");
+    }
     Ok(())
 }
