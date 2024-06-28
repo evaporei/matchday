@@ -2,6 +2,10 @@ use dotenv::dotenv;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::env;
+use tokio_retry::{
+    strategy::{jitter, ExponentialBackoff},
+    Retry,
+};
 
 const SEASON_23_24_ID: &str = "sr:season:105353";
 
@@ -86,12 +90,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = build_client();
 
-    let competitors = get_competitors(&client).await?;
+    let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
+
+    let competitors = Retry::spawn(retry_strategy.clone(), || get_competitors(&client)).await?;
     // println!("{competitors:#?}");
 
     for competitor in competitors.season_competitors {
         println!("fetching for id: {}", competitor.id);
-        let competitor_stats = get_competitor_stats(&client, &competitor.id).await?;
+        let competitor_stats = Retry::spawn(retry_strategy.clone(), || {
+            get_competitor_stats(&client, &competitor.id)
+        })
+        .await?;
 
         println!("{competitor_stats:#?}");
     }
