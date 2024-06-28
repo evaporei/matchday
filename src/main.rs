@@ -1,7 +1,7 @@
-use std::env;
 use dotenv::dotenv;
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::env;
 
 const COMPETITOR_STATS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors/$COMPETITOR/statistics.json?api_key=$API_KEY";
 
@@ -30,16 +30,19 @@ fn build_client() -> reqwest::Client {
         .unwrap()
 }
 
-async fn get_competitor_stats(client: &reqwest::Client, id: &str) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
-    let api_key = env::var("SPORTRADAR_API_KEY")
-        .expect("SPORTRADAR_API_KEY env var is not set");
+async fn get_competitor_stats(
+    client: &reqwest::Client,
+    id: &str,
+) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
+    let api_key = env::var("SPORTRADAR_API_KEY").expect("SPORTRADAR_API_KEY env var is not set");
 
     let url = COMPETITOR_STATS_URL
         .replace("$SEASON", "sr:season:105353")
         .replace("$COMPETITOR", id)
         .replace("$API_KEY", &api_key);
 
-    Ok(client.get(url)
+    Ok(client
+        .get(url)
         .send()
         .await?
         .json::<CompetitorStats>()
