@@ -20,22 +20,26 @@ struct CompetitorStats {
     competitor: Competitor,
 }
 
+fn build_client() -> reqwest::Client {
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", HeaderValue::from_static("application/json"));
+
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .unwrap()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
+
+    let client = build_client();
 
     let api_key = env::var("SPORTRADAR_API_KEY")
         .expect("SPORTRADAR_API_KEY env var is not set");
 
     let url = format!("{COMPETITOR_STATS_URL}?api_key={api_key}");
-
-    let mut headers = HeaderMap::new();
-    headers.insert("accept", HeaderValue::from_static("application/json"));
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .unwrap();
 
     let resp = client.get(url)
         .send()
