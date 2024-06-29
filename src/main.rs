@@ -81,6 +81,17 @@ impl SportsApiClient {
             .await?)
     }
 
+    async fn fetch_competitors_with_retry(
+        &self,
+    ) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+        let strategy = ExponentialBackoff::from_millis(100)
+            .clone()
+            .map(jitter)
+            .take(3);
+
+        Ok(Retry::spawn(strategy, || self.fetch_competitors()).await?)
+    }
+
     async fn fetch_competitor_stats(
         &self,
         id: &str,
@@ -97,6 +108,18 @@ impl SportsApiClient {
             .await?
             .json::<CompetitorStats>()
             .await?)
+    }
+
+    async fn fetch_competitor_stats_with_retry(
+        &self,
+        id: &str,
+    ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
+        let strategy = ExponentialBackoff::from_millis(100)
+            .clone()
+            .map(jitter)
+            .take(3);
+
+        Ok(Retry::spawn(strategy, || self.fetch_competitor_stats(id)).await?)
     }
 }
 
@@ -165,9 +188,7 @@ impl Cache {
         match self.competitors {
             Some(ref competitors) => Ok(competitors.clone()),
             None => {
-                let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
-                let competitors =
-                    Retry::spawn(retry_strategy, || self.api_client.fetch_competitors()).await?;
+                let competitors = self.api_client.fetch_competitors_with_retry().await?;
 
                 let mut competitors_file = self.base_path.clone();
                 competitors_file.push("competitors.json");
@@ -197,12 +218,10 @@ impl Cache {
         if self.stats.contains_key(&stats_file) {
             return Ok(self.stats.get(&stats_file).unwrap());
         }
-        let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
-
-        let stats = Retry::spawn(retry_strategy, || {
-            self.api_client.fetch_competitor_stats(&id)
-        })
-        .await?;
+        let stats = self
+            .api_client
+            .fetch_competitor_stats_with_retry(&id)
+            .await?;
 
         let _ = fs::File::create(&stats_file);
 
