@@ -270,7 +270,22 @@ use clap::Parser;
 enum Cmd {
     TopAssists,
     TopGoals,
-    TopPlayers,
+}
+
+struct TopPlayers(Vec<Player>);
+
+impl TopPlayers {
+    fn new(players: Vec<Player>) -> Self {
+        Self(players)
+    }
+    fn by_assists(mut self) -> impl Iterator<Item=Player> {
+        self.0.sort_by_key(|p| p.statistics.assists);
+        self.0.into_iter().rev()
+    }
+    fn by_goals(mut self) -> impl Iterator<Item=Player> {
+        self.0.sort_by_key(|p| p.statistics.goals_scored);
+        self.0.into_iter().rev()
+    }
 }
 
 #[tokio::main]
@@ -285,49 +300,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("fetching season data...");
     let competitors = cache.get_competitors().await?;
-    let mut players_stats = Vec::with_capacity(20 * 28);
+    let mut players = Vec::with_capacity(20 * 28);
 
     for competitor in competitors.season_competitors.clone() {
         let stats = cache.get_competitor_stats(&competitor.id).await?;
-        players_stats.extend(stats.competitor.players.clone());
+        players.extend(stats.competitor.players.clone());
     }
 
+    let top_players = TopPlayers::new(players);
     match cmd {
-        Cmd::TopPlayers => {
-            let mut set = HashSet::new();
-
-            let mut ord_goals = players_stats.clone();
-            let mut ord_assists = players_stats.clone();
-
-            ord_goals.sort_by_key(|p| p.statistics.goals_scored);
-            for player in ord_goals.iter().rev().take(10) {
-                set.insert(player);
-            }
-
-            ord_assists.sort_by_key(|p| p.statistics.assists);
-            for player in ord_assists.iter().rev().take(10) {
-                set.insert(player);
-            }
-
-            println!("Goals | Assists | Player Name");
-            for player in set {
-                println!(
-                    " {} | {} | {}",
-                    player.statistics.goals_scored, player.statistics.assists, player.name
-                );
-            }
-        }
         Cmd::TopAssists => {
-            players_stats.sort_by_key(|p| p.statistics.assists);
             println!("Assists | Player Name");
-            for player in players_stats.iter().rev().take(10) {
+            for player in top_players.by_assists().take(10) {
                 println!(" {} | {}", player.statistics.assists, player.name);
             }
         }
         Cmd::TopGoals => {
-            players_stats.sort_by_key(|p| p.statistics.goals_scored);
             println!("Goals | Player Name");
-            for player in players_stats.iter().rev().take(10) {
+            for player in top_players.by_goals().take(10) {
                 println!(" {} | {}", player.statistics.goals_scored, player.name);
             }
         }
