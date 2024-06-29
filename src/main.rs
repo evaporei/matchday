@@ -1,7 +1,7 @@
 use dotenv::dotenv;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use tokio_retry::{
     strategy::{jitter, ExponentialBackoff},
@@ -24,13 +24,13 @@ struct SeasonCompetitor {
 
 const COMPETITOR_STATS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors/$COMPETITOR/statistics.json?api_key=$API_KEY";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 struct PlayerStats {
     assists: usize,
     goals_scored: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 struct Player {
     id: String,
     name: String,
@@ -237,33 +237,73 @@ impl Cache {
     }
 }
 
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+enum Cmd {
+    TopAssists,
+    TopGoals,
+    TopPlayers,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
+
+    let cmd = Cmd::parse();
 
     let client = SportsApiClient::new();
 
     let mut cache = Cache::new(client);
 
+    println!("fetching season data...");
     let competitors = cache.get_competitors().await?;
-    // println!("{competitors:#?}");
     let mut players_stats = Vec::with_capacity(20 * 28);
 
-    println!("fetching player data...");
     for competitor in competitors.season_competitors {
         let stats = cache.get_competitor_stats(&competitor.id).await?;
         players_stats.extend(stats.competitor.players.clone());
     }
 
-    players_stats.sort_by_key(|p| p.statistics.assists);
-    println!("best players by assist");
-    for player in players_stats.iter().rev().take(10) {
-        println!("{:?}", player);
-    }
-    players_stats.sort_by_key(|p| p.statistics.goals_scored);
-    println!("best players by goals scored");
-    for player in players_stats.iter().rev().take(10) {
-        println!("{:?}", player);
+    match cmd {
+        Cmd::TopPlayers => {
+            let mut set = HashSet::new();
+
+            let mut ord_goals = players_stats.clone();
+            let mut ord_assists = players_stats.clone();
+
+            ord_goals.sort_by_key(|p| p.statistics.goals_scored);
+            for player in ord_goals.iter().rev().take(10) {
+                set.insert(player);
+            }
+
+            ord_assists.sort_by_key(|p| p.statistics.assists);
+            for player in ord_assists.iter().rev().take(10) {
+                set.insert(player);
+            }
+
+            println!("Goals | Assists | Player Name");
+            for player in set {
+                println!(
+                    " {} | {} | {}",
+                    player.statistics.goals_scored, player.statistics.assists, player.name
+                );
+            }
+        }
+        Cmd::TopAssists => {
+            players_stats.sort_by_key(|p| p.statistics.assists);
+            println!("Assists | Player Name");
+            for player in players_stats.iter().rev().take(10) {
+                println!(" {} | {}", player.statistics.assists, player.name);
+            }
+        }
+        Cmd::TopGoals => {
+            players_stats.sort_by_key(|p| p.statistics.goals_scored);
+            println!("Goals | Player Name");
+            for player in players_stats.iter().rev().take(10) {
+                println!(" {} | {}", player.statistics.goals_scored, player.name);
+            }
+        }
     }
 
     Ok(())
