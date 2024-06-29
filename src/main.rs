@@ -24,24 +24,25 @@ struct SeasonCompetitor {
 
 const COMPETITOR_STATS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors/$COMPETITOR/statistics.json?api_key=$API_KEY";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct PlayerStats {
     assists: usize,
     goals_scored: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Player {
     id: String,
+    name: String,
     statistics: PlayerStats,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct CompetitorPlayers {
     players: Vec<Player>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct CompetitorStats {
     competitor: CompetitorPlayers,
 }
@@ -246,13 +247,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let competitors = cache.get_competitors().await?;
     // println!("{competitors:#?}");
+    let mut players_stats = Vec::with_capacity(20 * 28);
 
+    println!("fetching player data...");
     for competitor in competitors.season_competitors {
-        println!("fetching for id: {}", competitor.id);
-
-        let competitor_stats = cache.get_competitor_stats(&competitor.id).await?;
-
-        println!("{competitor_stats:#?}");
+        let stats = cache.get_competitor_stats(&competitor.id).await?;
+        players_stats.extend(stats.competitor.players.clone());
     }
+
+    players_stats.sort_by_key(|p| p.statistics.assists);
+    println!("best players by assist");
+    for player in players_stats.iter().rev().take(10) {
+        println!("{:?}", player);
+    }
+    players_stats.sort_by_key(|p| p.statistics.goals_scored);
+    println!("best players by goals scored");
+    for player in players_stats.iter().rev().take(10) {
+        println!("{:?}", player);
+    }
+
     Ok(())
 }
