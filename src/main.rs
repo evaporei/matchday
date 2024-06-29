@@ -46,63 +46,72 @@ struct CompetitorStats {
     competitor: CompetitorPlayers,
 }
 
-fn build_client() -> reqwest::Client {
-    let mut headers = HeaderMap::new();
-    headers.insert("accept", HeaderValue::from_static("application/json"));
-
-    reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .unwrap()
+struct SportsApiClient {
+    client: reqwest::Client,
+    api_key: String,
 }
 
-async fn fetch_competitor_stats(
-    client: &reqwest::Client,
-    id: &str,
-) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
-    let api_key = env::var("SPORTRADAR_API_KEY").expect("SPORTRADAR_API_KEY env var is not set");
+impl SportsApiClient {
+    // requires SPORTRADAD_API_KEY env var
+    // can use dotenv
+    fn new() -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert("accept", HeaderValue::from_static("application/json"));
 
-    let url = COMPETITOR_STATS_URL
-        .replace("$SEASON", SEASON_23_24_ID)
-        .replace("$COMPETITOR", id)
-        .replace("$API_KEY", &api_key);
+        Self {
+            api_key: env::var("SPORTRADAR_API_KEY").expect("SPORTRADAR_API_KEY env var is not set"),
+            client: reqwest::Client::builder()
+                .default_headers(headers)
+                .build()
+                .unwrap(),
+        }
+    }
 
-    Ok(client
-        .get(url)
-        .send()
-        .await?
-        .json::<CompetitorStats>()
-        .await?)
-}
+    async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+        let url = SEASON_COMPETITORS_URL
+            .replace("$SEASON", SEASON_23_24_ID)
+            .replace("$API_KEY", &self.api_key);
 
-async fn fetch_competitors(
-    client: &reqwest::Client,
-) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
-    let api_key = env::var("SPORTRADAR_API_KEY").expect("SPORTRADAR_API_KEY env var is not set");
+        Ok(self
+            .client
+            .get(url)
+            .send()
+            .await?
+            .json::<SeasonCompetitors>()
+            .await?)
+    }
 
-    let url = SEASON_COMPETITORS_URL
-        .replace("$SEASON", SEASON_23_24_ID)
-        .replace("$API_KEY", &api_key);
+    async fn fetch_competitor_stats(
+        &self,
+        id: &str,
+    ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
+        let url = COMPETITOR_STATS_URL
+            .replace("$SEASON", SEASON_23_24_ID)
+            .replace("$COMPETITOR", id)
+            .replace("$API_KEY", &self.api_key);
 
-    Ok(client
-        .get(url)
-        .send()
-        .await?
-        .json::<SeasonCompetitors>()
-        .await?)
+        Ok(self
+            .client
+            .get(url)
+            .send()
+            .await?
+            .json::<CompetitorStats>()
+            .await?)
+    }
 }
 
 use std::fs;
 use std::path::PathBuf;
 
 struct Cache {
+    api_client: SportsApiClient,
     base_path: PathBuf,
     competitors: Option<SeasonCompetitors>,
     stats: HashMap<PathBuf, CompetitorStats>,
 }
 
 impl Cache {
-    fn new() -> Self {
+    fn new(client: SportsApiClient) -> Self {
         // ideally could use lib to run consistently
         // on windows
         #[allow(deprecated)]
@@ -144,6 +153,7 @@ impl Cache {
         };
 
         Self {
+            api_client: client,
             base_path: base_dir,
             competitors,
             stats,
@@ -151,16 +161,13 @@ impl Cache {
     }
 
     /// gets from loaded cache or fetches them and saves to cache
-    async fn get_competitors(
-        &mut self,
-        client: &reqwest::Client,
-    ) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+    async fn get_competitors(&mut self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
         match self.competitors {
             Some(ref competitors) => Ok(competitors.clone()),
             None => {
                 let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
                 let competitors =
-                    Retry::spawn(retry_strategy, || fetch_competitors(client)).await?;
+                    Retry::spawn(retry_strategy, || self.api_client.fetch_competitors()).await?;
 
                 let mut competitors_file = self.base_path.clone();
                 competitors_file.push("competitors.json");
@@ -181,7 +188,6 @@ impl Cache {
 
     async fn get_competitor_stats(
         &mut self,
-        client: &reqwest::Client,
         id: &str,
     ) -> Result<&CompetitorStats, Box<dyn std::error::Error>> {
         let mut stats_file = self.base_path.clone();
@@ -193,7 +199,10 @@ impl Cache {
         }
         let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
 
-        let stats = Retry::spawn(retry_strategy, || fetch_competitor_stats(&client, &id)).await?;
+        let stats = Retry::spawn(retry_strategy, || {
+            self.api_client.fetch_competitor_stats(&id)
+        })
+        .await?;
 
         let _ = fs::File::create(&stats_file);
 
@@ -212,17 +221,17 @@ impl Cache {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    let mut cache = Cache::new();
+    let client = SportsApiClient::new();
 
-    let client = build_client();
+    let mut cache = Cache::new(client);
 
-    let competitors = cache.get_competitors(&client).await?;
+    let competitors = cache.get_competitors().await?;
     // println!("{competitors:#?}");
 
     for competitor in competitors.season_competitors {
         println!("fetching for id: {}", competitor.id);
 
-        let competitor_stats = cache.get_competitor_stats(&client, &competitor.id).await?;
+        let competitor_stats = cache.get_competitor_stats(&competitor.id).await?;
 
         println!("{competitor_stats:#?}");
     }
