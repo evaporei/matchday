@@ -2,7 +2,7 @@ use dotenv::dotenv;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::env;
+use std::{env, io};
 use tokio_retry::{
     strategy::{jitter, ExponentialBackoff},
     Retry,
@@ -188,6 +188,13 @@ impl CachedClient {
         Ok(self.stats.get(&stats_file).unwrap())
     }
 
+    fn clear(&mut self) -> io::Result<()> {
+        self.competitors = None;
+        self.stats.clear();
+        fs::remove_dir_all(&self.base_path)?;
+        Ok(())
+    }
+
     // path methods
     fn base_path() -> PathBuf {
         // ideally could use lib to run consistently
@@ -244,7 +251,7 @@ impl CachedClient {
         };
         stats
     }
-    fn write_competitors_to_file(&self, competitors: &SeasonCompetitors) -> Result<(), std::io::Error> {
+    fn write_competitors_to_file(&self, competitors: &SeasonCompetitors) -> io::Result<()> {
         let competitors_file = Self::competitors_file(&self.base_path);
         let _ = fs::File::create(&competitors_file);
         fs::write(
@@ -254,7 +261,7 @@ impl CachedClient {
         )?;
         Ok(())
     }
-    fn write_stats_to_file(&self, stats_file: &PathBuf, stats: &CompetitorStats) -> Result<(), std::io::Error> {
+    fn write_stats_to_file(&self, stats_file: &PathBuf, stats: &CompetitorStats) -> io::Result<()> {
         let _ = fs::File::create(&stats_file);
         fs::write(
             &stats_file,
@@ -271,6 +278,7 @@ enum Cmd {
     TopAssists,
     TopGoals,
     TopPlayers,
+    ClearCache,
 }
 
 struct TopPlayers(Vec<Player>);
@@ -331,6 +339,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for player in top_players.by_both().take(10) {
                 println!(" {} | {} | {}", player.statistics.goals_scored, player.statistics.assists, player.name);
             }
+        }
+        Cmd::ClearCache => {
+            println!("deleting season data");
+            cache.clear()?;
         }
     }
 
