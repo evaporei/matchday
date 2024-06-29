@@ -287,16 +287,17 @@ impl TopPlayers {
     fn new(players: Vec<Player>) -> Self {
         Self(players)
     }
-    fn by_assists(mut self) -> impl Iterator<Item=Player> {
+    fn by_assists(mut self) -> impl Iterator<Item = Player> {
         self.0.sort_by_key(|p| p.statistics.assists);
         self.0.into_iter().rev()
     }
-    fn by_goals(mut self) -> impl Iterator<Item=Player> {
+    fn by_goals(mut self) -> impl Iterator<Item = Player> {
         self.0.sort_by_key(|p| p.statistics.goals_scored);
         self.0.into_iter().rev()
     }
-    fn by_both(mut self) -> impl Iterator<Item=Player> {
-        self.0.sort_unstable_by_key(|p| (p.statistics.goals_scored, p.statistics.assists));
+    fn by_both(mut self) -> impl Iterator<Item = Player> {
+        self.0
+            .sort_unstable_by_key(|p| (p.statistics.goals_scored, p.statistics.assists));
         self.0.into_iter().rev()
     }
 }
@@ -337,7 +338,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Cmd::TopPlayers => {
             println!("Goals | Assists | Player Name");
             for player in top_players.by_both().take(10) {
-                println!(" {} | {} | {}", player.statistics.goals_scored, player.statistics.assists, player.name);
+                println!(
+                    " {} | {} | {}",
+                    player.statistics.goals_scored, player.statistics.assists, player.name
+                );
             }
         }
         Cmd::ClearCache => {
