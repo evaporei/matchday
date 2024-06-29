@@ -127,83 +127,42 @@ impl SportsApiClient {
 use std::fs;
 use std::path::PathBuf;
 
-struct Cache {
+struct CachedClient {
     api_client: SportsApiClient,
     base_path: PathBuf,
     competitors: Option<SeasonCompetitors>,
     stats: HashMap<PathBuf, CompetitorStats>,
 }
 
-impl Cache {
+impl CachedClient {
     fn new(client: SportsApiClient) -> Self {
-        // ideally could use lib to run consistently
-        // on windows
-        #[allow(deprecated)]
-        let mut base_dir = std::env::home_dir().expect("should have home dir");
-        base_dir.push(".matchday");
+        let base_path = Self::base_path();
         // we ignore the error if it already exists
-        let _ = fs::create_dir(&base_dir);
+        let _ = fs::create_dir(&base_path);
 
-        let mut competitors_file = base_dir.clone();
-        competitors_file.push("competitors.json");
-
-        let competitors = if competitors_file.exists() {
-            let raw_competitors = fs::read_to_string(competitors_file).unwrap();
-            Some(
-                serde_json::from_str(&raw_competitors)
-                    .expect("competitors cache should be valid JSON"),
-            )
-        } else {
-            None
-        };
-
-        let mut stats_dir = base_dir.clone();
-        stats_dir.push("stats");
-
-        let mut stats = HashMap::new();
-        if stats_dir.exists() {
-            for entry in fs::read_dir(stats_dir).expect("stats should be a valid dir") {
-                let file = entry.unwrap();
-                let mut file_name = file.path();
-                file_name.set_extension("json");
-                let raw_stat = fs::read_to_string(&file_name).unwrap();
-                let stat = serde_json::from_str(&raw_stat)
-                    .expect("competitors cache should be valid JSON");
-                stats.insert(file_name, stat);
-            }
-        } else {
-            // we ignore the error if it already exists
-            let _ = fs::create_dir(&stats_dir);
-        };
+        let competitors = Self::read_competitors_file(&base_path);
+        let stats = Self::read_stats_dir(&base_path);
 
         Self {
             api_client: client,
-            base_path: base_dir,
+            base_path,
             competitors,
             stats,
         }
     }
 
     /// gets from loaded cache or fetches them and saves to cache
-    async fn get_competitors(&mut self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+    async fn get_competitors(&mut self) -> Result<&SeasonCompetitors, Box<dyn std::error::Error>> {
         match self.competitors {
-            Some(ref competitors) => Ok(competitors.clone()),
+            Some(ref competitors) => Ok(competitors),
             None => {
                 let competitors = self.api_client.fetch_competitors_with_retry().await?;
 
-                let mut competitors_file = self.base_path.clone();
-                competitors_file.push("competitors.json");
-
-                let _ = fs::File::create(&competitors_file);
-                fs::write(
-                    &competitors_file,
-                    serde_json::to_string(&competitors)
-                        .expect("competitors should be serializable to JSON"),
-                )?;
+                self.write_competitors_to_file(&competitors)?;
 
                 self.competitors = Some(competitors);
 
-                Ok(self.competitors.as_ref().unwrap().clone())
+                Ok(self.competitors.as_ref().unwrap())
             }
         }
     }
@@ -212,28 +171,96 @@ impl Cache {
         &mut self,
         id: &str,
     ) -> Result<&CompetitorStats, Box<dyn std::error::Error>> {
-        let mut stats_file = self.base_path.clone();
-        stats_file.push("stats");
-        stats_file.push(id);
-        stats_file.set_extension("json");
+        let stats_file = Self::stats_file(&self.base_path, id);
         if self.stats.contains_key(&stats_file) {
             return Ok(self.stats.get(&stats_file).unwrap());
         }
+
         let stats = self
             .api_client
             .fetch_competitor_stats_with_retry(&id)
             .await?;
 
-        let _ = fs::File::create(&stats_file);
-
-        fs::write(
-            &stats_file,
-            serde_json::to_string(&stats).expect("stats should be serializable to JSON"),
-        )?;
+        self.write_stats_to_file(&stats_file, &stats)?;
 
         self.stats.insert(stats_file.clone(), stats);
 
         Ok(self.stats.get(&stats_file).unwrap())
+    }
+
+    // path methods
+    fn base_path() -> PathBuf {
+        // ideally could use lib to run consistently
+        // on windows
+        #[allow(deprecated)]
+        let mut base_path = std::env::home_dir().expect("should have home dir");
+        base_path.push(".matchday");
+        base_path
+    }
+    fn competitors_file(base_path: &PathBuf) -> PathBuf {
+        let mut competitors_file = base_path.clone();
+        competitors_file.push("competitors.json");
+        competitors_file
+    }
+    fn stats_dir(base_path: &PathBuf) -> PathBuf {
+        let mut stats_dir = base_path.clone();
+        stats_dir.push("stats");
+        stats_dir
+    }
+    fn stats_file(base_path: &PathBuf, id: &str) -> PathBuf {
+        let mut stats_file = Self::stats_dir(base_path);
+        stats_file.push(id);
+        stats_file.set_extension("json");
+        stats_file
+    }
+
+    // fs methods
+    fn read_competitors_file(base_path: &PathBuf) -> Option<SeasonCompetitors> {
+        let competitors_file = Self::competitors_file(&base_path);
+        if competitors_file.exists() {
+            let raw_competitors = fs::read_to_string(competitors_file).unwrap();
+            Some(
+                serde_json::from_str(&raw_competitors)
+                    .expect("competitors cache should be valid JSON"),
+            )
+        } else {
+            None
+        }
+    }
+    fn read_stats_dir(base_path: &PathBuf) -> HashMap<PathBuf, CompetitorStats> {
+        let mut stats = HashMap::new();
+        let stats_dir = Self::stats_dir(&base_path);
+        if stats_dir.exists() {
+            for entry in fs::read_dir(stats_dir).expect("stats should be a valid dir") {
+                let file = entry.unwrap();
+                let raw_stat = fs::read_to_string(&file.path()).unwrap();
+                let stat = serde_json::from_str(&raw_stat)
+                    .expect("competitors cache should be valid JSON");
+                stats.insert(file.path(), stat);
+            }
+        } else {
+            // we ignore the error if it already exists
+            let _ = fs::create_dir(&stats_dir);
+        };
+        stats
+    }
+    fn write_competitors_to_file(&self, competitors: &SeasonCompetitors) -> Result<(), std::io::Error> {
+        let competitors_file = Self::competitors_file(&self.base_path);
+        let _ = fs::File::create(&competitors_file);
+        fs::write(
+            &competitors_file,
+            serde_json::to_string(&competitors)
+                .expect("competitors should be serializable to JSON"),
+        )?;
+        Ok(())
+    }
+    fn write_stats_to_file(&self, stats_file: &PathBuf, stats: &CompetitorStats) -> Result<(), std::io::Error> {
+        let _ = fs::File::create(&stats_file);
+        fs::write(
+            &stats_file,
+            serde_json::to_string(&stats).expect("stats should be serializable to JSON"),
+        )?;
+        Ok(())
     }
 }
 
@@ -254,13 +281,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = SportsApiClient::new();
 
-    let mut cache = Cache::new(client);
+    let mut cache = CachedClient::new(client);
 
     println!("fetching season data...");
     let competitors = cache.get_competitors().await?;
     let mut players_stats = Vec::with_capacity(20 * 28);
 
-    for competitor in competitors.season_competitors {
+    for competitor in competitors.season_competitors.clone() {
         let stats = cache.get_competitor_stats(&competitor.id).await?;
         players_stats.extend(stats.competitor.players.clone());
     }
