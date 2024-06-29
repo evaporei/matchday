@@ -1,6 +1,7 @@
 use dotenv::dotenv;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use tokio_retry::{
     strategy::{jitter, ExponentialBackoff},
@@ -11,12 +12,12 @@ const SEASON_23_24_ID: &str = "sr:season:105353";
 
 const SEASON_COMPETITORS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors.json?api_key=$API_KEY";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct SeasonCompetitors {
     season_competitors: Vec<SeasonCompetitor>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct SeasonCompetitor {
     id: String,
 }
@@ -97,6 +98,7 @@ use std::path::PathBuf;
 struct Cache {
     base_path: PathBuf,
     competitors: Option<SeasonCompetitors>,
+    stats: HashMap<PathBuf, CompetitorStats>,
 }
 
 impl Cache {
@@ -122,9 +124,29 @@ impl Cache {
             None
         };
 
+        let mut stats_dir = base_dir.clone();
+        stats_dir.push("stats");
+
+        let mut stats = HashMap::new();
+        if stats_dir.exists() {
+            for entry in fs::read_dir(stats_dir).expect("stats should be a valid dir") {
+                let file = entry.unwrap();
+                let mut file_name = file.path();
+                file_name.set_extension("json");
+                let raw_stat = fs::read_to_string(&file_name).unwrap();
+                let stat = serde_json::from_str(&raw_stat)
+                    .expect("competitors cache should be valid JSON");
+                stats.insert(file_name, stat);
+            }
+        } else {
+            // we ignore the error if it already exists
+            let _ = fs::create_dir(&stats_dir);
+        };
+
         Self {
             base_path: base_dir,
             competitors,
+            stats,
         }
     }
 
@@ -132,9 +154,9 @@ impl Cache {
     async fn get_competitors(
         &mut self,
         client: &reqwest::Client,
-    ) -> Result<&SeasonCompetitors, Box<dyn std::error::Error>> {
+    ) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
         match self.competitors {
-            Some(ref competitors) => Ok(competitors),
+            Some(ref competitors) => Ok(competitors.clone()),
             None => {
                 let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
                 let competitors =
@@ -152,9 +174,37 @@ impl Cache {
 
                 self.competitors = Some(competitors);
 
-                Ok(self.competitors.as_ref().unwrap())
+                Ok(self.competitors.as_ref().unwrap().clone())
             }
         }
+    }
+
+    async fn get_competitor_stats(
+        &mut self,
+        client: &reqwest::Client,
+        id: &str,
+    ) -> Result<&CompetitorStats, Box<dyn std::error::Error>> {
+        let mut stats_file = self.base_path.clone();
+        stats_file.push("stats");
+        stats_file.push(id);
+        stats_file.set_extension("json");
+        if self.stats.contains_key(&stats_file) {
+            return Ok(self.stats.get(&stats_file).unwrap());
+        }
+        let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
+
+        let stats = Retry::spawn(retry_strategy, || fetch_competitor_stats(&client, &id)).await?;
+
+        let _ = fs::File::create(&stats_file);
+
+        fs::write(
+            &stats_file,
+            serde_json::to_string(&stats).expect("stats should be serializable to JSON"),
+        )?;
+
+        self.stats.insert(stats_file.clone(), stats);
+
+        Ok(self.stats.get(&stats_file).unwrap())
     }
 }
 
@@ -165,17 +215,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cache = Cache::new();
 
     let client = build_client();
-    let retry_strategy = ExponentialBackoff::from_millis(500).map(jitter).take(3);
 
     let competitors = cache.get_competitors(&client).await?;
     // println!("{competitors:#?}");
 
-    for competitor in &competitors.season_competitors {
+    for competitor in competitors.season_competitors {
         println!("fetching for id: {}", competitor.id);
-        let competitor_stats = Retry::spawn(retry_strategy.clone(), || {
-            fetch_competitor_stats(&client, &competitor.id)
-        })
-        .await?;
+
+        let competitor_stats = cache.get_competitor_stats(&client, &competitor.id).await?;
 
         println!("{competitor_stats:#?}");
     }
