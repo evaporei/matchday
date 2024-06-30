@@ -31,7 +31,7 @@ pub struct PlayerStats {
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub struct Player {
-    id: String,
+    pub id: String,
     pub name: String,
     pub statistics: PlayerStats,
 }
