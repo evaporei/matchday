@@ -3,7 +3,13 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::api_client::{CompetitorStats, SeasonCompetitors, SportsApiClient};
+use crate::api_client::SportsApiClient;
+use crate::types::{CompetitorStats, SeasonCompetitors};
+
+#[cfg(not(test))]
+const CACHE_FOLDER: &str = ".matchday";
+#[cfg(test)]
+const CACHE_FOLDER: &str = ".tmp-cache-matchday";
 
 pub struct CachedClient {
     api_client: SportsApiClient,
@@ -81,7 +87,7 @@ impl CachedClient {
         // on windows
         #[allow(deprecated)]
         let mut base_path = std::env::home_dir().expect("should have home dir");
-        base_path.push(".matchday");
+        base_path.push(CACHE_FOLDER);
         base_path
     }
     fn competitors_file(base_path: &PathBuf) -> PathBuf {

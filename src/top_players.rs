@@ -1,4 +1,4 @@
-use crate::api_client::Player;
+use crate::types::Player;
 
 pub struct TopPlayers(Vec<Player>);
 
@@ -23,8 +23,8 @@ impl TopPlayers {
 
 #[cfg(test)]
 mod test {
-    use crate::api_client::{Player, PlayerStats};
     use crate::top_players::TopPlayers;
+    use crate::types::{Player, PlayerStats};
 
     type Goals = usize;
     type Assists = usize;

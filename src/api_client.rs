@@ -1,52 +1,20 @@
 use std::env;
 
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde::{Deserialize, Serialize};
 use tokio_retry::{
     strategy::{jitter, ExponentialBackoff},
     Retry,
 };
+
+use crate::types::*;
 
 const SEASON_23_24_ID: &str = "sr:season:105353";
 
 #[cfg(not(test))]
 const SEASON_COMPETITORS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors.json?api_key=$API_KEY";
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SeasonCompetitors {
-    pub season_competitors: Vec<SeasonCompetitor>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SeasonCompetitor {
-    pub id: String,
-}
-
 #[cfg(not(test))]
 const COMPETITOR_STATS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/en/seasons/$SEASON/competitors/$COMPETITOR/statistics.json?api_key=$API_KEY";
-
-#[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
-pub struct PlayerStats {
-    pub assists: usize,
-    pub goals_scored: usize,
-}
-
-#[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
-pub struct Player {
-    pub id: String,
-    pub name: String,
-    pub statistics: PlayerStats,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub struct CompetitorPlayers {
-    pub players: Vec<Player>,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub struct CompetitorStats {
-    pub competitor: CompetitorPlayers,
-}
 
 pub struct SportsApiClient {
     client: reqwest::Client,
@@ -145,9 +113,10 @@ impl SportsApiClient {
 
 #[cfg(test)]
 mod test {
-    use crate::api_client::{
+    use crate::api_client::SportsApiClient;
+    use crate::types::{
         CompetitorPlayers, CompetitorStats, Player, PlayerStats, SeasonCompetitor,
-        SeasonCompetitors, SportsApiClient,
+        SeasonCompetitors,
     };
 
     #[test]

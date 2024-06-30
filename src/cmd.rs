@@ -1,8 +1,9 @@
 use clap::Parser;
 
-use crate::api_client::{Player, SportsApiClient};
+use crate::api_client::SportsApiClient;
 use crate::cached_client::CachedClient;
 use crate::top_players::TopPlayers;
+use crate::types::Player;
 
 #[derive(Parser, Debug)]
 pub enum Cmd {
