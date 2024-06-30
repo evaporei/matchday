@@ -1,11 +1,14 @@
 use std::env;
+use std::time::Duration;
 
+use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderValue};
 use tokio_retry::{
     strategy::{jitter, ExponentialBackoff},
     Retry,
 };
 
+use crate::client::Client;
 use crate::types::*;
 
 const SEASON_23_24_ID: &str = "sr:season:105353";
@@ -47,7 +50,7 @@ impl SportsApiClient {
         self.mock_url = Some(url);
     }
 
-    pub async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+    async fn competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
         #[cfg(not(test))]
         let base_url = SEASON_COMPETITORS_URL;
         #[cfg(test)]
@@ -65,18 +68,7 @@ impl SportsApiClient {
             .await?)
     }
 
-    pub async fn fetch_competitors_with_retry(
-        &self,
-    ) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
-        let strategy = ExponentialBackoff::from_millis(100)
-            .clone()
-            .map(jitter)
-            .take(3);
-
-        Ok(Retry::spawn(strategy, || self.fetch_competitors()).await?)
-    }
-
-    pub async fn fetch_competitor_stats(
+    async fn competitor_stats(
         &self,
         id: &str,
     ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
@@ -97,17 +89,22 @@ impl SportsApiClient {
             .json::<CompetitorStats>()
             .await?)
     }
+}
 
-    pub async fn fetch_competitor_stats_with_retry(
+fn retry_strategy() -> impl Iterator<Item = Duration> {
+    ExponentialBackoff::from_millis(100).map(jitter).take(3)
+}
+
+#[async_trait]
+impl Client for SportsApiClient {
+    async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+        Retry::spawn(retry_strategy(), || self.competitors()).await
+    }
+    async fn fetch_competitor_stats(
         &self,
         id: &str,
     ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
-        let strategy = ExponentialBackoff::from_millis(100)
-            .clone()
-            .map(jitter)
-            .take(3);
-
-        Ok(Retry::spawn(strategy, || self.fetch_competitor_stats(id)).await?)
+        Retry::spawn(retry_strategy(), || self.competitor_stats(id)).await
     }
 }
 

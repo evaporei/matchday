@@ -4,6 +4,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::api_client::SportsApiClient;
+use crate::client::Client;
 use crate::types::{CompetitorStats, SeasonCompetitors};
 
 #[cfg(not(test))]
@@ -12,14 +13,14 @@ const CACHE_FOLDER: &str = ".matchday";
 const CACHE_FOLDER: &str = ".tmp-cache-matchday";
 
 pub struct CachedClient {
-    api_client: SportsApiClient,
+    api_client: Box<dyn Client>,
     base_path: PathBuf,
     competitors: Option<SeasonCompetitors>,
     stats: HashMap<PathBuf, CompetitorStats>,
 }
 
 impl CachedClient {
-    pub fn new(client: SportsApiClient) -> Self {
+    pub fn new() -> Self {
         let base_path = Self::base_path();
         // we ignore the error if it already exists
         let _ = fs::create_dir(&base_path);
@@ -28,7 +29,7 @@ impl CachedClient {
         let stats = Self::read_stats_dir(&base_path);
 
         Self {
-            api_client: client,
+            api_client: Box::new(SportsApiClient::new()),
             base_path,
             competitors,
             stats,
@@ -42,7 +43,7 @@ impl CachedClient {
         match self.competitors {
             Some(ref competitors) => Ok(competitors),
             None => {
-                let competitors = self.api_client.fetch_competitors_with_retry().await?;
+                let competitors = self.api_client.fetch_competitors().await?;
 
                 self.write_competitors_to_file(&competitors)?;
 
@@ -62,10 +63,7 @@ impl CachedClient {
             return Ok(self.stats.get(&stats_file).unwrap());
         }
 
-        let stats = self
-            .api_client
-            .fetch_competitor_stats_with_retry(&id)
-            .await?;
+        let stats = self.api_client.fetch_competitor_stats(&id).await?;
 
         self.write_stats_to_file(&stats_file, &stats)?;
 

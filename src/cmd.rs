@@ -1,6 +1,5 @@
 use clap::Parser;
 
-use crate::api_client::SportsApiClient;
 use crate::cached_client::CachedClient;
 use crate::top_players::TopPlayers;
 use crate::types::Player;
@@ -52,9 +51,7 @@ fn top_players(top_players: TopPlayers) {
 
 impl Cmd {
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
-        let client = SportsApiClient::new();
-
-        let mut cache = CachedClient::new(client);
+        let mut cache = CachedClient::new();
 
         match self {
             Cmd::TopAssists => {
