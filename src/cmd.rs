@@ -51,7 +51,7 @@ fn top_players(top_players: TopPlayers) {
 
 impl Cmd {
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut cache = CachedClient::new();
+        let mut cache = CachedClient::new()?;
 
         match self {
             Cmd::TopAssists => {

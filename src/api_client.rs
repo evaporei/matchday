@@ -9,6 +9,7 @@ use tokio_retry::{
 };
 
 use crate::client::Client;
+use crate::error::Error;
 use crate::types::*;
 
 const SEASON_23_24_ID: &str = "sr:season:105353";
@@ -21,7 +22,7 @@ const COMPETITOR_STATS_URL: &str = "https://api.sportradar.com/soccer/trial/v4/e
 
 pub struct SportsApiClient {
     client: reqwest::Client,
-    pub(crate) api_key: String,
+    api_key: String,
 
     #[cfg(test)]
     pub(crate) mock_url: Option<String>,
@@ -30,19 +31,19 @@ pub struct SportsApiClient {
 impl SportsApiClient {
     // requires SPORTRADAR_API_KEY env var
     // can use dotenv
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, Error> {
         let mut headers = HeaderMap::new();
         headers.insert("accept", HeaderValue::from_static("application/json"));
 
-        Self {
-            api_key: env::var("SPORTRADAR_API_KEY").expect("SPORTRADAR_API_KEY env var is not set"),
+        Ok(Self {
+            api_key: env::var("SPORTRADAR_API_KEY")?,
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()
                 .unwrap(),
             #[cfg(test)]
             mock_url: None,
-        }
+        })
     }
 
     #[cfg(test)]
@@ -50,7 +51,7 @@ impl SportsApiClient {
         self.mock_url = Some(url);
     }
 
-    async fn competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+    async fn competitors(&self) -> Result<SeasonCompetitors, Error> {
         #[cfg(not(test))]
         let base_url = SEASON_COMPETITORS_URL;
         #[cfg(test)]
@@ -68,10 +69,7 @@ impl SportsApiClient {
             .await?)
     }
 
-    async fn competitor_stats(
-        &self,
-        id: &str,
-    ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
+    async fn competitor_stats(&self, id: &str) -> Result<CompetitorStats, Error> {
         #[cfg(not(test))]
         let base_url = COMPETITOR_STATS_URL;
         #[cfg(test)]
@@ -92,18 +90,15 @@ impl SportsApiClient {
 }
 
 fn retry_strategy() -> impl Iterator<Item = Duration> {
-    ExponentialBackoff::from_millis(100).map(jitter).take(3)
+    ExponentialBackoff::from_millis(20).map(jitter).take(3)
 }
 
 #[async_trait]
 impl Client for SportsApiClient {
-    async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+    async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Error> {
         Retry::spawn(retry_strategy(), || self.competitors()).await
     }
-    async fn fetch_competitor_stats(
-        &self,
-        id: &str,
-    ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
+    async fn fetch_competitor_stats(&self, id: &str) -> Result<CompetitorStats, Error> {
         Retry::spawn(retry_strategy(), || self.competitor_stats(id)).await
     }
 }
@@ -117,17 +112,10 @@ mod test {
         SeasonCompetitors,
     };
 
-    #[test]
-    fn test_new() {
-        dotenv::from_filename(".env.example").ok();
-        let client = SportsApiClient::new();
-        assert_eq!(client.api_key, "asdf1234");
-    }
-
     #[tokio::test]
     async fn test_fetch_competitors() {
         dotenv::from_filename(".env.example").ok();
-        let mut client = SportsApiClient::new();
+        let mut client = SportsApiClient::new().unwrap();
 
         let mut server = mockito::Server::new_async().await;
 
@@ -187,7 +175,7 @@ mod test {
     #[tokio::test]
     async fn test_fetch_competitor_stats() {
         dotenv::from_filename(".env.example").ok();
-        let mut client = SportsApiClient::new();
+        let mut client = SportsApiClient::new().unwrap();
 
         let mut server = mockito::Server::new_async().await;
 

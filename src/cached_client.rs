@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::api_client::SportsApiClient;
 use crate::client::Client;
+use crate::error::Error;
 use crate::types::{CompetitorStats, SeasonCompetitors};
 
 #[cfg(not(test))]
@@ -20,20 +21,20 @@ pub struct CachedClient {
 }
 
 impl CachedClient {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, Error> {
         let base_path = Self::base_path();
         // we ignore the error if it already exists
         let _ = fs::create_dir(&base_path);
 
-        let competitors = Self::read_competitors_file(&base_path);
-        let stats = Self::read_stats_dir(&base_path);
+        let competitors = Self::read_competitors_file(&base_path)?;
+        let stats = Self::read_stats_dir(&base_path)?;
 
-        Self {
-            api_client: Box::new(SportsApiClient::new()),
+        Ok(Self {
+            api_client: Box::new(SportsApiClient::new()?),
             base_path,
             competitors,
             stats,
-        }
+        })
     }
 
     #[cfg(test)]
@@ -42,9 +43,7 @@ impl CachedClient {
     }
 
     /// gets from loaded cache or fetches them and saves to cache
-    pub async fn get_competitors(
-        &mut self,
-    ) -> Result<&SeasonCompetitors, Box<dyn std::error::Error>> {
+    pub async fn get_competitors(&mut self) -> Result<&SeasonCompetitors, Error> {
         match self.competitors {
             Some(ref competitors) => Ok(competitors),
             None => {
@@ -59,10 +58,7 @@ impl CachedClient {
         }
     }
 
-    pub async fn get_competitor_stats(
-        &mut self,
-        id: &str,
-    ) -> Result<&CompetitorStats, Box<dyn std::error::Error>> {
+    pub async fn get_competitor_stats(&mut self, id: &str) -> Result<&CompetitorStats, Error> {
         let stats_file = Self::stats_file(&self.base_path, id);
         if self.stats.contains_key(&stats_file) {
             return Ok(self.stats.get(&stats_file).unwrap());
@@ -111,51 +107,44 @@ impl CachedClient {
     }
 
     // fs methods
-    fn read_competitors_file(base_path: &PathBuf) -> Option<SeasonCompetitors> {
+    fn read_competitors_file(base_path: &PathBuf) -> Result<Option<SeasonCompetitors>, Error> {
         let competitors_file = Self::competitors_file(&base_path);
         if competitors_file.exists() {
-            let raw_competitors = fs::read_to_string(competitors_file).unwrap();
-            Some(
-                serde_json::from_str(&raw_competitors)
-                    .expect("competitors cache should be valid JSON"),
-            )
+            let raw_competitors = fs::read_to_string(competitors_file)?;
+            Ok(Some(serde_json::from_str(&raw_competitors)?))
         } else {
-            None
+            Ok(None)
         }
     }
-    fn read_stats_dir(base_path: &PathBuf) -> HashMap<PathBuf, CompetitorStats> {
+    fn read_stats_dir(base_path: &PathBuf) -> Result<HashMap<PathBuf, CompetitorStats>, Error> {
         let mut stats = HashMap::new();
         let stats_dir = Self::stats_dir(&base_path);
         if stats_dir.exists() {
-            for entry in fs::read_dir(stats_dir).expect("stats should be a valid dir") {
-                let file = entry.unwrap();
-                let raw_stat = fs::read_to_string(&file.path()).unwrap();
-                let stat = serde_json::from_str(&raw_stat)
-                    .expect("competitors cache should be valid JSON");
+            for entry in fs::read_dir(stats_dir)? {
+                let file = entry?;
+                let raw_stat = fs::read_to_string(&file.path())?;
+                let stat = serde_json::from_str(&raw_stat)?;
                 stats.insert(file.path(), stat);
             }
         } else {
             // we ignore the error if it already exists
             let _ = fs::create_dir(&stats_dir);
         };
-        stats
+        Ok(stats)
     }
-    fn write_competitors_to_file(&self, competitors: &SeasonCompetitors) -> io::Result<()> {
+    fn write_competitors_to_file(&self, competitors: &SeasonCompetitors) -> Result<(), Error> {
         let competitors_file = Self::competitors_file(&self.base_path);
         let _ = fs::File::create(&competitors_file);
-        fs::write(
-            &competitors_file,
-            serde_json::to_string(&competitors)
-                .expect("competitors should be serializable to JSON"),
-        )?;
+        fs::write(&competitors_file, serde_json::to_string(&competitors)?)?;
         Ok(())
     }
-    fn write_stats_to_file(&self, stats_file: &PathBuf, stats: &CompetitorStats) -> io::Result<()> {
+    fn write_stats_to_file(
+        &self,
+        stats_file: &PathBuf,
+        stats: &CompetitorStats,
+    ) -> Result<(), Error> {
         let _ = fs::File::create(&stats_file);
-        fs::write(
-            &stats_file,
-            serde_json::to_string(&stats).expect("stats should be serializable to JSON"),
-        )?;
+        fs::write(&stats_file, serde_json::to_string(&stats)?)?;
         Ok(())
     }
 }
@@ -168,6 +157,7 @@ mod test {
 
     use crate::cached_client::{CachedClient, CACHE_FOLDER};
     use crate::client::Client;
+    use crate::error::Error;
     use crate::types::{
         CompetitorPlayers, CompetitorStats, Player, PlayerStats, SeasonCompetitor,
         SeasonCompetitors,
@@ -220,13 +210,10 @@ mod test {
 
     #[async_trait]
     impl Client for FakeClient {
-        async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+        async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Error> {
             Ok(self.competitors.clone())
         }
-        async fn fetch_competitor_stats(
-            &self,
-            _id: &str,
-        ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
+        async fn fetch_competitor_stats(&self, _id: &str) -> Result<CompetitorStats, Error> {
             Ok(self.stats.clone())
         }
     }
@@ -238,7 +225,7 @@ mod test {
         cache_dir.push(CACHE_FOLDER);
         let _ = fs::remove_dir_all(&cache_dir);
 
-        let mut cached = CachedClient::new();
+        let mut cached = CachedClient::new().unwrap();
         let fake_client = FakeClient::new();
         cached.set_client(Box::new(fake_client.clone()));
 
