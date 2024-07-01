@@ -12,7 +12,7 @@ pub enum Cmd {
     ClearCache,
 }
 
-async fn load_players(mut cache: CachedClient) -> Result<Vec<Player>, Box<dyn std::error::Error>> {
+async fn load_players(mut cache: CachedClient) -> anyhow::Result<Vec<Player>> {
     println!("fetching season data...");
     let competitors = cache.get_competitors().await?;
     let mut players = Vec::with_capacity(20 * 28);
@@ -50,7 +50,7 @@ fn top_players(top_players: TopPlayers) {
 }
 
 impl Cmd {
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(self) -> anyhow::Result<()> {
         let mut cache = CachedClient::new()?;
 
         match self {
