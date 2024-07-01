@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::api_client::SportsApiClient;
 use crate::client::Client;
-use crate::error::Error;
+use crate::error::{Error, IOError, JSONError};
 use crate::types::{CompetitorStats, SeasonCompetitors};
 
 #[cfg(not(test))]
@@ -110,8 +110,12 @@ impl CachedClient {
     fn read_competitors_file(base_path: &PathBuf) -> Result<Option<SeasonCompetitors>, Error> {
         let competitors_file = Self::competitors_file(&base_path);
         if competitors_file.exists() {
-            let raw_competitors = fs::read_to_string(competitors_file)?;
-            Ok(Some(serde_json::from_str(&raw_competitors)?))
+            let raw_competitors = fs::read_to_string(&competitors_file)
+                .map_err(|io_err| IOError::new(competitors_file.clone(), io_err))?;
+            Ok(Some(
+                serde_json::from_str(&raw_competitors)
+                    .map_err(|e| JSONError::new(Some(competitors_file), e))?,
+            ))
         } else {
             Ok(None)
         }
@@ -120,10 +124,14 @@ impl CachedClient {
         let mut stats = HashMap::new();
         let stats_dir = Self::stats_dir(&base_path);
         if stats_dir.exists() {
-            for entry in fs::read_dir(stats_dir)? {
-                let file = entry?;
-                let raw_stat = fs::read_to_string(&file.path())?;
-                let stat = serde_json::from_str(&raw_stat)?;
+            for entry in fs::read_dir(&stats_dir)
+                .map_err(|io_err| IOError::new(stats_dir.clone(), io_err))?
+            {
+                let file = entry.map_err(|io_err| IOError::new(stats_dir.clone(), io_err))?;
+                let raw_stat = fs::read_to_string(&file.path())
+                    .map_err(|io_err| IOError::new(file.path(), io_err))?;
+                let stat = serde_json::from_str(&raw_stat)
+                    .map_err(|e| JSONError::new(Some(file.path()), e))?;
                 stats.insert(file.path(), stat);
             }
         } else {
@@ -135,7 +143,11 @@ impl CachedClient {
     fn write_competitors_to_file(&self, competitors: &SeasonCompetitors) -> Result<(), Error> {
         let competitors_file = Self::competitors_file(&self.base_path);
         let _ = fs::File::create(&competitors_file);
-        fs::write(&competitors_file, serde_json::to_string(&competitors)?)?;
+        fs::write(
+            &competitors_file,
+            serde_json::to_string(&competitors).map_err(|e| JSONError::new(None, e))?,
+        )
+        .map_err(|io_err| IOError::new(competitors_file, io_err))?;
         Ok(())
     }
     fn write_stats_to_file(
@@ -144,7 +156,11 @@ impl CachedClient {
         stats: &CompetitorStats,
     ) -> Result<(), Error> {
         let _ = fs::File::create(&stats_file);
-        fs::write(&stats_file, serde_json::to_string(&stats)?)?;
+        fs::write(
+            &stats_file,
+            serde_json::to_string(&stats).map_err(|e| JSONError::new(None, e))?,
+        )
+        .map_err(|io_err| IOError::new(stats_file.clone(), io_err))?;
         Ok(())
     }
 }

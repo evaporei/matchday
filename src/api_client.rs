@@ -9,7 +9,7 @@ use tokio_retry::{
 };
 
 use crate::client::Client;
-use crate::error::Error;
+use crate::error::{EnvVarError, Error};
 use crate::types::*;
 
 const SEASON_23_24_ID: &str = "sr:season:105353";
@@ -36,7 +36,8 @@ impl SportsApiClient {
         headers.insert("accept", HeaderValue::from_static("application/json"));
 
         Ok(Self {
-            api_key: env::var("SPORTRADAR_API_KEY")?,
+            api_key: env::var("SPORTRADAR_API_KEY")
+                .map_err(|e| EnvVarError::new("SPORTRADAR_API_KEY", e))?,
             client: reqwest::Client::builder()
                 .default_headers(headers)
                 .build()
