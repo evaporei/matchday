@@ -10,7 +10,7 @@ use crate::types::{CompetitorStats, SeasonCompetitors};
 #[cfg(not(test))]
 const CACHE_FOLDER: &str = ".matchday";
 #[cfg(test)]
-const CACHE_FOLDER: &str = ".tmp-cache-matchday";
+pub(crate) const CACHE_FOLDER: &str = ".tmp-cache-matchday";
 
 pub struct CachedClient {
     api_client: Box<dyn Client>,
@@ -34,6 +34,11 @@ impl CachedClient {
             competitors,
             stats,
         }
+    }
+
+    #[cfg(test)]
+    fn set_client(&mut self, client: Box<dyn Client>) {
+        self.api_client = client;
     }
 
     /// gets from loaded cache or fetches them and saves to cache
@@ -152,5 +157,97 @@ impl CachedClient {
             serde_json::to_string(&stats).expect("stats should be serializable to JSON"),
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use async_trait::async_trait;
+    use std::fs;
+    use std::path::PathBuf;
+
+    use crate::cached_client::{CachedClient, CACHE_FOLDER};
+    use crate::client::Client;
+    use crate::types::{
+        CompetitorPlayers, CompetitorStats, Player, PlayerStats, SeasonCompetitor,
+        SeasonCompetitors,
+    };
+
+    #[derive(Clone)]
+    struct FakeClient {
+        competitors: SeasonCompetitors,
+        stats: CompetitorStats,
+    }
+
+    impl FakeClient {
+        fn new() -> Self {
+            Self {
+                competitors: SeasonCompetitors {
+                    season_competitors: vec![
+                        SeasonCompetitor {
+                            id: "sr:competitor:13".to_string(),
+                        },
+                        SeasonCompetitor {
+                            id: "sr:competitor:17".to_string(),
+                        },
+                    ],
+                },
+                stats: CompetitorStats {
+                    competitor: CompetitorPlayers {
+                        players: vec![
+                            Player {
+                                id: "sr:player:1234".to_string(),
+                                name: "Pelé".to_string(),
+                                statistics: PlayerStats {
+                                    assists: 100,
+                                    goals_scored: 100,
+                                },
+                            },
+                            Player {
+                                id: "sr:player:256".to_string(),
+                                name: "David Beckham".to_string(),
+                                statistics: PlayerStats {
+                                    assists: 50,
+                                    goals_scored: 50,
+                                },
+                            },
+                        ],
+                    },
+                },
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Client for FakeClient {
+        async fn fetch_competitors(&self) -> Result<SeasonCompetitors, Box<dyn std::error::Error>> {
+            Ok(self.competitors.clone())
+        }
+        async fn fetch_competitor_stats(
+            &self,
+            _id: &str,
+        ) -> Result<CompetitorStats, Box<dyn std::error::Error>> {
+            Ok(self.stats.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetching() {
+        #[allow(deprecated)]
+        let mut cache_dir = PathBuf::from(std::env::home_dir().unwrap());
+        cache_dir.push(CACHE_FOLDER);
+        let _ = fs::remove_dir_all(&cache_dir);
+
+        let mut cached = CachedClient::new();
+        let fake_client = FakeClient::new();
+        cached.set_client(Box::new(fake_client.clone()));
+
+        let competitors = cached.get_competitors().await.unwrap();
+        assert_eq!(competitors, &fake_client.competitors);
+
+        let stats = cached.get_competitor_stats("not used").await.unwrap();
+        assert_eq!(stats, &fake_client.stats);
+
+        let _ = fs::remove_dir_all(&cache_dir);
     }
 }

@@ -111,6 +111,7 @@ impl Client for SportsApiClient {
 #[cfg(test)]
 mod test {
     use crate::api_client::SportsApiClient;
+    use crate::client::Client;
     use crate::types::{
         CompetitorPlayers, CompetitorStats, Player, PlayerStats, SeasonCompetitor,
         SeasonCompetitors,
