@@ -50,7 +50,7 @@ Example output:
 
 ```bash
 $ cargo run top-players 
-fetching season data...
+Fetching season data...
 Goals | Assists | Player Name
  27 | 5 | Haaland, Erling
  22 | 11 | Palmer, Cole
@@ -84,9 +84,7 @@ $ cargo test
 
 ## Improvements
 
-I ended up getting too excited about the code challenge, so I definitely spent more than a few hours doing it. I decided to stop at this current point because I think it shows a little bit of my code in various areas.
-
-If I were to spend more time on this project, here are a few things that could be done to improve it:
+I ended up getting too excited about the code challenge, so I definitely spent more than a few hours doing it. I decided to stop at this current point because I think it shows a little bit of my code in various areas. If I were to spend more time on it, here are a few things that could be done to improve it:
 
 - Parallelize API calls. This was not done because:
   - I faced a "Too Many Requests" error by doing more than a single request in a small time frame. This is probably because my API key was for the trial version. Perhaps the API could behave differently if a production key had been used.
@@ -101,9 +99,10 @@ If I were to spend more time on this project, here are a few things that could b
 - The file system calls could be abstracted to test the cache.
   - I decided to not do this because it would take a lot of time, and ultimately the cache could be anything, for example a Redis server, so the test may be thrown away
 - In depth tests of the cache, I decided to do only a couple of base cases, since I was concerned with time.
-- Integration and/or end to end tests.
+- End to end tests and/or more integration tests (most here are unit).
 - Documentation in code
   - Because the problem statement is simple, the code ended up being straight forward to read. Perhaps the most "complex" part is the cache
   - And since I was doing a `README.md` file alongside with it, I decided to give a high-level overview here
   - If the problem being solved is harder, more complex, or has many more layers, code documentation can be key to readability
   - Doc tests could be used too to show examples of how to use structures/functions
+- Clones could be removed if the scale of the data was different. Since we're dealing with small amounts of data (few teams, few players) `.clone()`s are not affecting performance.

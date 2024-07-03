@@ -4,16 +4,22 @@ use crate::cached_client::CachedClient;
 use crate::top_players::TopPlayers;
 use crate::types::Player;
 
+/// CLI tool designed to track the top football players in the Premier League's 23/24 season.
+/// It fetches data from the Sportradar Soccer API and outputs the top 10 players with the most goals and assists.
 #[derive(Parser, Debug)]
 pub enum Cmd {
+    /// Prints the top 10 players ordered by assists
     TopAssists,
+    /// Prints the top 10 players ordered by goals scored
     TopGoals,
+    /// Prints the top 10 players ordered first by goals then assists
     TopPlayers,
+    /// Clears the cache files for the season data
     ClearCache,
 }
 
 async fn load_players(mut cache: CachedClient) -> anyhow::Result<Vec<Player>> {
-    println!("fetching season data...");
+    println!("Fetching season data...");
     let competitors = cache.get_competitors().await?;
     let mut players = Vec::with_capacity(20 * 28);
 
@@ -67,7 +73,7 @@ impl Cmd {
                 top_players(TopPlayers::new(players));
             }
             Cmd::ClearCache => {
-                println!("deleting season data");
+                println!("Deleting season data");
                 cache.clear()?;
             }
         }

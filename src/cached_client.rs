@@ -23,7 +23,9 @@ pub struct CachedClient {
 impl CachedClient {
     pub fn new() -> Result<Self, Error> {
         let base_path = Self::base_path();
-        // we ignore the error if it already exists
+        // Ignore the error if it already exists.
+        // If it fails because of something else,
+        // the other fs calls will error accordingly.
         let _ = fs::create_dir(&base_path);
 
         let competitors = Self::read_competitors_file(&base_path)?;
@@ -42,7 +44,6 @@ impl CachedClient {
         self.api_client = client;
     }
 
-    /// gets from loaded cache or fetches them and saves to cache
     pub async fn get_competitors(&mut self) -> Result<&SeasonCompetitors, Error> {
         match self.competitors {
             Some(ref competitors) => Ok(competitors),
@@ -82,8 +83,7 @@ impl CachedClient {
 
     // path methods
     fn base_path() -> PathBuf {
-        // ideally could use lib to run consistently
-        // on windows
+        // Ideally could use a library to run consistently on Windows
         #[allow(deprecated)]
         let mut base_path = std::env::home_dir().expect("should have home dir");
         base_path.push(CACHE_FOLDER);
@@ -135,7 +135,9 @@ impl CachedClient {
                 stats.insert(file.path(), stat);
             }
         } else {
-            // we ignore the error if it already exists
+            // Ignore the error if it already exists.
+            // If it fails because of something else,
+            // the other fs calls will error accordingly.
             let _ = fs::create_dir(&stats_dir);
         };
         Ok(stats)

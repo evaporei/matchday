@@ -29,8 +29,7 @@ pub struct SportsApiClient {
 }
 
 impl SportsApiClient {
-    // requires SPORTRADAR_API_KEY env var
-    // can use dotenv
+    // Requires SPORTRADAR_API_KEY env var
     pub fn new() -> Result<Self, Error> {
         let mut headers = HeaderMap::new();
         headers.insert("accept", HeaderValue::from_static("application/json"));
