@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::api_client::SportsApiClient;
 use crate::client::Client;
@@ -65,7 +65,7 @@ impl CachedClient {
             return Ok(self.stats.get(&stats_file).unwrap());
         }
 
-        let stats = self.api_client.fetch_competitor_stats(&id).await?;
+        let stats = self.api_client.fetch_competitor_stats(id).await?;
 
         self.write_stats_to_file(&stats_file, &stats)?;
 
@@ -89,17 +89,17 @@ impl CachedClient {
         base_path.push(CACHE_FOLDER);
         base_path
     }
-    fn competitors_file(base_path: &PathBuf) -> PathBuf {
-        let mut competitors_file = base_path.clone();
+    fn competitors_file(base_path: &Path) -> PathBuf {
+        let mut competitors_file = base_path.to_path_buf();
         competitors_file.push("competitors.json");
         competitors_file
     }
-    fn stats_dir(base_path: &PathBuf) -> PathBuf {
-        let mut stats_dir = base_path.clone();
+    fn stats_dir(base_path: &Path) -> PathBuf {
+        let mut stats_dir = base_path.to_path_buf();
         stats_dir.push("stats");
         stats_dir
     }
-    fn stats_file(base_path: &PathBuf, id: &str) -> PathBuf {
+    fn stats_file(base_path: &Path, id: &str) -> PathBuf {
         let mut stats_file = Self::stats_dir(base_path);
         stats_file.push(id);
         stats_file.set_extension("json");
@@ -107,8 +107,8 @@ impl CachedClient {
     }
 
     // fs methods
-    fn read_competitors_file(base_path: &PathBuf) -> Result<Option<SeasonCompetitors>, Error> {
-        let competitors_file = Self::competitors_file(&base_path);
+    fn read_competitors_file(base_path: &Path) -> Result<Option<SeasonCompetitors>, Error> {
+        let competitors_file = Self::competitors_file(base_path);
         if competitors_file.exists() {
             let raw_competitors = fs::read_to_string(&competitors_file)
                 .map_err(|io_err| IOError::new(competitors_file.clone(), io_err))?;
@@ -120,15 +120,15 @@ impl CachedClient {
             Ok(None)
         }
     }
-    fn read_stats_dir(base_path: &PathBuf) -> Result<HashMap<PathBuf, CompetitorStats>, Error> {
+    fn read_stats_dir(base_path: &Path) -> Result<HashMap<PathBuf, CompetitorStats>, Error> {
         let mut stats = HashMap::new();
-        let stats_dir = Self::stats_dir(&base_path);
+        let stats_dir = Self::stats_dir(base_path);
         if stats_dir.exists() {
             for entry in fs::read_dir(&stats_dir)
                 .map_err(|io_err| IOError::new(stats_dir.clone(), io_err))?
             {
                 let file = entry.map_err(|io_err| IOError::new(stats_dir.clone(), io_err))?;
-                let raw_stat = fs::read_to_string(&file.path())
+                let raw_stat = fs::read_to_string(file.path())
                     .map_err(|io_err| IOError::new(file.path(), io_err))?;
                 let stat = serde_json::from_str(&raw_stat)
                     .map_err(|e| JSONError::new(Some(file.path()), e))?;
@@ -157,10 +157,10 @@ impl CachedClient {
         stats_file: &PathBuf,
         stats: &CompetitorStats,
     ) -> Result<(), Error> {
-        let _ = fs::File::create(&stats_file);
+        let _ = fs::File::create(stats_file);
         fs::write(
-            &stats_file,
-            serde_json::to_string(&stats).map_err(|e| JSONError::new(None, e))?,
+            stats_file,
+            serde_json::to_string(stats).map_err(|e| JSONError::new(None, e))?,
         )
         .map_err(|io_err| IOError::new(stats_file.clone(), io_err))?;
         Ok(())

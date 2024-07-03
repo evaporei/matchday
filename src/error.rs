@@ -24,7 +24,7 @@ pub struct IOError {
 impl IOError {
     pub fn new(file: std::path::PathBuf, source: std::io::Error) -> Self {
         Self {
-            file: file.into(),
+            file,
             source,
         }
     }
@@ -58,7 +58,7 @@ pub struct JSONError {
 impl JSONError {
     pub fn new(file: Option<std::path::PathBuf>, source: serde_json::Error) -> Self {
         Self {
-            file: file.map(|s| s.into()),
+            file,
             source,
         }
     }
